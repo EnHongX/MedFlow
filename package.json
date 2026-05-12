@@ -1,0 +1,19 @@
+{
+  "name": "medflow",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace backend run start:dev",
+    "dev:patient": "npm --workspace apps/patient-web run dev",
+    "dev:doctor": "npm --workspace apps/doctor-web run dev",
+    "dev:frontdesk": "npm --workspace apps/frontdesk-web run dev",
+    "dev:admin": "npm --workspace apps/admin-web run dev",
+    "build": "npm --workspaces run build",
+    "lint": "npm --workspaces run lint",
+    "typecheck": "npm --workspaces run typecheck"
+  }
+}
