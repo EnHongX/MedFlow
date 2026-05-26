@@ -1,32 +1,267 @@
+/* MedFlow Unified Design System */
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f6f8fb;
+  background: #f5f7fa;
   color: #1f2937;
+  line-height: 1.5;
 }
 
-.app-shell {
+/* Page container */
+.page-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 32px;
 }
 
-.panel {
-  width: min(720px, 100%);
-  padding: 32px;
-  border: 1px solid #d8dee8;
+/* Page header */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.page-header .subtitle {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* Section cards */
+.section-card {
+  background: #fff;
   border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  padding: 20px 24px;
+  margin-bottom: 20px;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: #64748b;
+.section-card .card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 16px;
+}
+
+/* Form area */
+.form-area {
+  margin-bottom: 20px;
+}
+
+.form-area .el-form--inline .el-form-item {
+  margin-bottom: 12px;
+  margin-right: 16px;
+}
+
+/* Select width fix */
+.el-select {
+  min-width: 200px !important;
+}
+
+.el-date-editor.el-input {
+  min-width: 180px !important;
+}
+
+/* Table area */
+.el-table {
+  width: 100% !important;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.el-table .el-table__header th {
+  background: #f9fafb !important;
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+  padding: 10px 12px;
+}
+
+.el-table .el-table__body td {
+  padding: 10px 12px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.el-table .cell {
+  word-break: normal !important;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+}
+
+/* Button spacing in tables */
+.el-table .el-button + .el-button {
+  margin-left: 6px;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  padding: 32px 16px;
+}
+
+/* Tabs */
+.el-tabs__header {
+  margin-bottom: 20px !important;
+}
+
+.el-tabs__item {
+  font-size: 14px !important;
+}
+
+/* Card overrides */
+.el-card {
+  border-radius: 8px;
+  border-color: #e5e7eb;
+}
+
+.el-card__header {
+  padding: 14px 20px !important;
+  border-bottom-color: #f3f4f6 !important;
+  background: #f9fafb;
+}
+
+/* Dialog */
+.el-dialog {
+  border-radius: 10px !important;
+}
+
+/* Tag spacing */
+.el-tag {
+  font-size: 12px;
+}
+
+/* Form item description */
+.form-desc {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Fix inline form alignment */
+.el-form--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+}
+
+/* Input number width */
+.el-input-number {
+  width: 140px;
+}
+
+/* Status tag in header */
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+/* Queue list for frontdesk */
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  transition: background 0.15s;
+}
+
+.queue-item:hover {
+  background: #f9fafb;
+}
+
+.queue-item--called {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.queue-item--skipped {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.queue-item--in_progress {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.queue-item__number {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #374151;
+}
+
+.queue-item--called .queue-item__number {
+  background: #2563eb;
+  color: #fff;
+}
+
+.queue-item--skipped .queue-item__number {
+  background: #ef4444;
+  color: #fff;
+}
+
+.queue-item__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-item__name {
   font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+  margin-bottom: 2px;
 }
 
-h1 {
-  margin: 0 0 12px;
-  font-size: 32px;
+.queue-item__meta {
+  font-size: 12px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.queue-item__action {
+  flex-shrink: 0;
 }

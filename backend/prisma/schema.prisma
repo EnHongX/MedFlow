@@ -16,11 +16,246 @@ enum RoleCode {
 
 model User {
   id        String   @id @default(uuid())
-  phone    String   @unique
-  name     String
-  password String
+  phone     String   @unique
+  name      String
+  password  String
+  role      RoleCode @default(PATIENT)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  doctor       Doctor?
+  appointments Appointment[]
+  waitlistEntries WaitlistEntry[]
+
   @@map("users")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  doctors Doctor[]
+
+  @@map("departments")
+}
+
+model Doctor {
+  id           String @id @default(uuid())
+  userId       String @unique @map("user_id")
+  departmentId String @map("department_id")
+  title        String
+
+  user       User       @relation(fields: [userId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  schedules  Schedule[]
+
+  @@map("doctors")
+}
+
+model Schedule {
+  id        String   @id @default(uuid())
+  doctorId  String   @map("doctor_id")
+  date      DateTime @db.Date
+  startTime String   @map("start_time")
+  endTime   String   @map("end_time")
+  total     Int
+  remaining Int
+
+  suspended     Boolean   @default(false)
+  suspendReason String?   @map("suspend_reason")
+  suspendedAt   DateTime? @map("suspended_at")
+
+  substituted       Boolean   @default(false)
+  substituteReason  String?   @map("substitute_reason")
+  substitutedAt     DateTime? @map("substituted_at")
+  substitutedToId   String?   @map("substituted_to_id")
+
+  doctor         Doctor          @relation(fields: [doctorId], references: [id])
+  appointments   Appointment[]
+  changeRequests ChangeRequest[]
+  waitlistEntries WaitlistEntry[]
+
+  @@unique([doctorId, date, startTime])
+  @@map("schedules")
+}
+
+enum WaitlistStatus {
+  PENDING
+  PROMOTED
+  CANCELLED
+  CLOSED
+}
+
+enum AppointmentStatus {
+  BOOKED
+  CANCELLED
+  CHECKED_IN
+  CALLED
+  IN_PROGRESS
+  COMPLETED
+  PENDING_FRONTDESK
+}
+
+model Appointment {
+  id         String            @id @default(uuid())
+  patientId    String            @map("patient_id")
+  scheduleId   String            @map("schedule_id")
+  status       AppointmentStatus @default(BOOKED)
+  cancelReason   String?           @map("cancel_reason")
+  transferReason String?           @map("transfer_reason")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  patient        User            @relation(fields: [patientId], references: [id])
+  schedule       Schedule        @relation(fields: [scheduleId], references: [id])
+  queueEntry     QueueEntry?
+  changeRequests ChangeRequest[]
+  visitRecord    VisitRecord?
+
+  @@map("appointments")
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  SKIPPED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model QueueEntry {
+  id            String      @id @default(uuid())
+  appointmentId String      @unique @map("appointment_id")
+  queueNumber   Int         @map("queue_number")
+  status        QueueStatus @default(WAITING)
+  calledAt      DateTime?   @map("called_at")
+  completedAt   DateTime?   @map("completed_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  skipLogs    QueueSkipLog[]
+
+  @@map("queue_entries")
+}
+
+model QueueSkipLog {
+  id             String   @id @default(uuid())
+  queueEntryId   String   @map("queue_entry_id")
+  originalNumber Int      @map("original_number")
+  skippedAt      DateTime @default(now()) @map("skipped_at")
+
+  queueEntry QueueEntry @relation(fields: [queueEntryId], references: [id])
+
+  @@map("queue_skip_logs")
+}
+
+model ClinicConfig {
+  id                  String   @id @default("singleton")
+  cancelDeadlineHours Int      @default(2) @map("cancel_deadline_hours")
+  advanceBookingDays  Int      @default(7) @map("advance_booking_days")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("clinic_configs")
+}
+
+enum ChangeRequestType {
+  CANCEL
+  RESCHEDULE
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ChangeRequest {
+  id               String              @id @default(uuid())
+  appointmentId    String              @map("appointment_id")
+  type             ChangeRequestType
+  status           ChangeRequestStatus @default(PENDING)
+  targetScheduleId String?             @map("target_schedule_id")
+  reason           String?
+  resolvedAt       DateTime?           @map("resolved_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  appointment    Appointment @relation(fields: [appointmentId], references: [id])
+  targetSchedule Schedule?   @relation(fields: [targetScheduleId], references: [id])
+
+  @@map("change_requests")
+}
+
+enum OperationType {
+  CREATE_DEPARTMENT
+  CREATE_DOCTOR
+  CREATE_SCHEDULE
+  SUSPEND_SCHEDULE
+  CREATE_APPOINTMENT
+  CANCEL_APPOINTMENT
+  RESCHEDULE_APPOINTMENT
+  CHECKIN
+  CALL_QUEUE
+  SKIP_QUEUE
+  REQUEUE
+  APPROVE_CHANGE_REQUEST
+  REJECT_CHANGE_REQUEST
+  START_APPOINTMENT
+  COMPLETE_APPOINTMENT
+  WAITLIST_JOIN
+  WAITLIST_CANCEL
+  WAITLIST_PROMOTE
+  WAITLIST_CLOSE
+  SUBSTITUTE_SCHEDULE
+  CREATE_VISIT_RECORD
+}
+
+model OperationLog {
+  id        String        @id @default(uuid())
+  type      OperationType
+  target    String
+  role      RoleCode
+  result    String        @default("success")
+  remark    String?
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@index([type])
+  @@index([createdAt])
+  @@map("operation_logs")
+}
+
+model WaitlistEntry {
+  id            String         @id @default(uuid())
+  patientId     String         @map("patient_id")
+  scheduleId    String         @map("schedule_id")
+  status        WaitlistStatus @default(PENDING)
+  position      Int
+  appointmentId String?        @map("appointment_id")
+  closeReason   String?        @map("close_reason")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  patient  User     @relation(fields: [patientId], references: [id])
+  schedule Schedule @relation(fields: [scheduleId], references: [id])
+
+  @@index([scheduleId, status, position])
+  @@map("waitlist_entries")
+}
+
+model VisitRecord {
+  id                  String    @id @default(uuid())
+  appointmentId       String    @unique @map("appointment_id")
+  chiefComplaint      String    @map("chief_complaint")
+  diagnosis           String
+  treatmentPlan       String    @map("treatment_plan")
+  followUpRecommended Boolean   @default(false) @map("follow_up_recommended")
+  followUpDeptId      String?   @map("follow_up_dept_id")
+  followUpDoctorId    String?   @map("follow_up_doctor_id")
+  followUpDateStart   DateTime? @map("follow_up_date_start") @db.Date
+  followUpDateEnd     DateTime? @map("follow_up_date_end") @db.Date
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+
+  @@map("visit_records")
 }
