@@ -136,21 +136,25 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
-            <el-tag v-else-if="row.status === 'CANCELLED'" type="info" size="small">已取消</el-tag>
-            <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
-            <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
-            <el-tag v-else-if="row.status === 'CHECKED_IN' && row.queueEntry?.status === 'SKIPPED'" type="danger" size="small">已过号</el-tag>
-            <el-tag v-else-if="row.status === 'CHECKED_IN' && row.queueEntry?.skipLogs?.length" size="small" style="background:#f0e6ff;color:#7b2d8b;border-color:#d9b3e6">重排中</el-tag>
-            <el-tag v-else-if="row.status === 'CHECKED_IN'" type="warning" size="small">候诊中</el-tag>
-            <el-tag v-else-if="row.status === 'COMPLETED'" type="success" size="small">已完成</el-tag>
-            <el-tag v-else-if="row.status === 'PENDING_FRONTDESK'" type="danger" size="small">待处理</el-tag>
-            <el-tag v-else size="small">{{ row.status }}</el-tag>
+            <template v-if="row.status === 'CHECKED_IN' && row.queueEntry?.status === 'SKIPPED'">
+              <el-tag type="danger" size="small">已过号</el-tag>
+            </template>
+            <template v-else-if="row.status === 'CHECKED_IN' && row.queueEntry?.skipLogs?.length">
+              <el-tag size="small" style="background:#f0e6ff;color:#7b2d8b;border-color:#d9b3e6">重排中</el-tag>
+            </template>
+            <template v-else-if="row.status === 'CHECKED_IN'">
+              <el-tag type="warning" size="small">候诊中</el-tag>
+            </template>
+            <template v-else>
+              <el-tag :type="getStatusTagType(getAppointmentStatus(row))" size="small">{{ getAppointmentStatus(row) }}</el-tag>
+            </template>
           </template>
         </el-table-column>
-        <el-table-column label="原因" min-width="120" show-overflow-tooltip>
+        <el-table-column label="提示" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.transferReason" style="color:#e6a23c">{{ row.transferReason }}</span>
+            <span v-if="row.status === 'NO_SHOW'" style="color:#dc2626">未到诊，预约已取消，号源已释放</span>
+            <span v-else-if="row.status === 'BOOKED' && getAppointmentStatus(row) === '已迟到'" style="color:#e6a23c">已迟到，请尽快签到</span>
+            <span v-else-if="row.transferReason" style="color:#e6a23c">{{ row.transferReason }}</span>
             <span v-else-if="row.cancelReason">{{ row.cancelReason }}</span>
             <span v-else style="color:#9ca3af">-</span>
           </template>
@@ -361,6 +365,58 @@ const rescheduleDialogVisible = ref(false);
 const rescheduleTarget = ref<any>(null);
 const rescheduleSchedules = ref<any[]>([]);
 const selectedNewScheduleId = ref('');
+const clinicConfig = ref({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
+
+async function fetchConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      clinicConfig.value = {
+        lateThresholdMinutes: data.lateThresholdMinutes ?? 15,
+        noShowThresholdMinutes: data.noShowThresholdMinutes ?? 30,
+      };
+    }
+  } catch { /* ignore */ }
+}
+
+function getAppointmentStatus(row: any): string {
+  if (row.status === 'NO_SHOW') return '已爽约';
+  if (row.status === 'CANCELLED') return '已取消';
+  if (row.status === 'CHECKED_IN') return '已签到';
+  if (row.status === 'CALLED') return '已叫号';
+  if (row.status === 'IN_PROGRESS') return '接诊中';
+  if (row.status === 'COMPLETED') return '已完成';
+  if (row.status === 'PENDING_FRONTDESK') return '待处理';
+
+  if (row.status === 'BOOKED') {
+    const scheduleDate = row.schedule?.date?.slice(0, 10);
+    const startTime = row.schedule?.startTime;
+    if (!scheduleDate || !startTime) return '已预约';
+
+    const appointmentTime = new Date(`${scheduleDate}T${startTime}:00`);
+    const now = new Date();
+    const diffMs = now.getTime() - appointmentTime.getTime();
+    const diffMin = diffMs / 60000;
+
+    if (diffMin >= clinicConfig.value.lateThresholdMinutes) return '已迟到';
+    return '已预约';
+  }
+  return row.status || '未知';
+}
+
+function getStatusTagType(status: string): string {
+  if (status === '已预约') return '';
+  if (status === '已签到') return 'warning';
+  if (status === '已叫号') return 'primary';
+  if (status === '接诊中') return 'warning';
+  if (status === '已完成') return 'success';
+  if (status === '已取消') return 'info';
+  if (status === '已迟到') return 'warning';
+  if (status === '已爽约') return 'danger';
+  if (status === '待处理') return 'danger';
+  return 'info';
+}
 const waitlistPhone = ref('');
 const myWaitlist = ref<any[]>([]);
 const waitlistSearched = ref(false);
@@ -448,7 +504,10 @@ function reset() {
   selectedScheduleId.value = '';
 }
 
-onMounted(fetchDepartments);
+onMounted(() => {
+  fetchDepartments();
+  fetchConfig();
+});
 
 async function fetchMyAppointments() {
   if (!myPhone.value.trim()) { ElMessage.warning('请输入手机号'); return; }
