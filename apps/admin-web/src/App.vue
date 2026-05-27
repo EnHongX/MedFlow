@@ -183,6 +183,35 @@
             </el-col>
           </el-row>
 
+          <el-row :gutter="20" style="margin-top:16px">
+            <el-col :span="12">
+              <div class="config-card">
+                <div class="config-card__icon" style="background:#fef3c7;color:#d97706">⏰</div>
+                <div class="config-card__body">
+                  <div class="config-card__title">迟到阈值</div>
+                  <div class="config-card__desc">预约开始后超过多少分钟未签到，系统显示为"已迟到"</div>
+                  <div class="config-card__input">
+                    <el-input-number v-model="clinicConfig.lateThresholdMinutes" :min="1" :step="5" />
+                    <span class="config-card__unit">分钟</span>
+                  </div>
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="12">
+              <div class="config-card">
+                <div class="config-card__icon" style="background:#fee2e2;color:#dc2626">🚫</div>
+                <div class="config-card__body">
+                  <div class="config-card__title">爽约阈值</div>
+                  <div class="config-card__desc">预约开始后超过多少分钟未签到，前台可标记为"爽约"</div>
+                  <div class="config-card__input">
+                    <el-input-number v-model="clinicConfig.noShowThresholdMinutes" :min="5" :step="5" />
+                    <span class="config-card__unit">分钟</span>
+                  </div>
+                </div>
+              </div>
+            </el-col>
+          </el-row>
+
           <div style="margin-top:24px;padding-top:20px;border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:12px">
             <el-button type="primary" @click="saveConfig">保存配置</el-button>
             <span style="color:#9ca3af;font-size:12px">保存后对新发起的操作立即生效</span>
@@ -216,6 +245,7 @@
                 <el-option label="候补转正" value="WAITLIST_PROMOTE" />
                 <el-option label="候补关闭" value="WAITLIST_CLOSE" />
                 <el-option label="创建就诊记录" value="CREATE_VISIT_RECORD" />
+                <el-option label="标记爽约" value="MARK_NO_SHOW" />
               </el-select>
             </el-form-item>
             <el-form-item label="时间范围">
@@ -386,7 +416,7 @@ const newSchedule = ref({ doctorId: '', date: '', startTime: '08:00', endTime: '
 const suspendDialogVisible = ref(false);
 const suspendTarget = ref<any>(null);
 const suspendReason = ref('');
-const clinicConfig = ref({ cancelDeadlineHours: 2, advanceBookingDays: 7 });
+const clinicConfig = ref({ cancelDeadlineHours: 2, advanceBookingDays: 7, lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
 
 const substituteDialogVisible = ref(false);
 const substituteSource = ref<any>(null);
@@ -559,12 +589,29 @@ async function fetchConfig() {
     const res = await fetch(`${API}/config`);
     if (res.ok) {
       const data = await res.json();
-      clinicConfig.value = { cancelDeadlineHours: data.cancelDeadlineHours, advanceBookingDays: data.advanceBookingDays };
+      clinicConfig.value = {
+        cancelDeadlineHours: data.cancelDeadlineHours,
+        advanceBookingDays: data.advanceBookingDays,
+        lateThresholdMinutes: data.lateThresholdMinutes ?? 15,
+        noShowThresholdMinutes: data.noShowThresholdMinutes ?? 30,
+      };
     }
   } catch { /* ignore config fetch failure on load */ }
 }
 
 async function saveConfig() {
+  if (clinicConfig.value.lateThresholdMinutes <= 0) {
+    ElMessage.error('迟到阈值必须为正整数');
+    return;
+  }
+  if (clinicConfig.value.noShowThresholdMinutes <= 0) {
+    ElMessage.error('爽约阈值必须为正整数');
+    return;
+  }
+  if (clinicConfig.value.lateThresholdMinutes >= clinicConfig.value.noShowThresholdMinutes) {
+    ElMessage.error('迟到阈值必须小于爽约阈值');
+    return;
+  }
   try {
     const res = await fetch(`${API}/config`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -636,14 +683,14 @@ const LOG_TYPE_LABELS: Record<string, string> = {
   SKIP_QUEUE: '过号', REQUEUE: '重新排队', APPROVE_CHANGE_REQUEST: '审批通过',
   REJECT_CHANGE_REQUEST: '审批拒绝', START_APPOINTMENT: '开始接诊', COMPLETE_APPOINTMENT: '完成接诊',
   WAITLIST_JOIN: '加入候补', WAITLIST_CANCEL: '取消候补', WAITLIST_PROMOTE: '候补转正', WAITLIST_CLOSE: '候补关闭',
-  CREATE_VISIT_RECORD: '创建就诊记录',
+  CREATE_VISIT_RECORD: '创建就诊记录', MARK_NO_SHOW: '标记爽约',
 };
 
 function logTypeLabel(type: string) { return LOG_TYPE_LABELS[type] || type; }
 
 function logTagType(type: string): string {
   if (type.includes('CREATE') || type === 'CHECKIN') return '';
-  if (type.includes('CANCEL') || type === 'SUSPEND_SCHEDULE' || type === 'SKIP_QUEUE' || type === 'REJECT_CHANGE_REQUEST') return 'danger';
+  if (type.includes('CANCEL') || type === 'SUSPEND_SCHEDULE' || type === 'SKIP_QUEUE' || type === 'REJECT_CHANGE_REQUEST' || type === 'MARK_NO_SHOW') return 'danger';
   if (type.includes('COMPLETE') || type === 'APPROVE_CHANGE_REQUEST') return 'success';
   if (type === 'SUBSTITUTE_SCHEDULE') return 'warning';
   return 'warning';

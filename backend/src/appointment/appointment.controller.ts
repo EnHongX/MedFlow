@@ -138,6 +138,55 @@ export class AppointmentController {
     });
   }
 
+  @Patch(':id/no-show')
+  async markNoShow(@Param('id') id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // Lock the appointment row to prevent race with checkin
+      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${id} FOR UPDATE`;
+
+      const appointment = await tx.appointment.findUniqueOrThrow({
+        where: { id },
+        include: { schedule: true, patient: { select: { name: true } } },
+      });
+
+      if (appointment.status !== 'BOOKED') {
+        throw new BadRequestException('只有已预约状态才能标记爽约');
+      }
+
+      // Validate that no-show threshold has been reached
+      const config = await tx.clinicConfig.findFirst();
+      if (config) {
+        const appointmentTime = new Date(
+          appointment.schedule.date.toISOString().slice(0, 10) + 'T' + appointment.schedule.startTime + ':00',
+        );
+        const noShowThresholdMs = config.noShowThresholdMinutes * 60 * 1000;
+        if (Date.now() - appointmentTime.getTime() < noShowThresholdMs) {
+          throw new BadRequestException(`未到爽约时间，需等待${config.noShowThresholdMinutes}分钟`);
+        }
+      }
+
+      await tx.schedule.update({
+        where: { id: appointment.scheduleId },
+        data: { remaining: { increment: 1 } },
+      });
+
+      await promoteWaitlist(tx as any, appointment.scheduleId);
+
+      const noShow = await tx.appointment.update({
+        where: { id },
+        data: { status: 'NO_SHOW' },
+      });
+
+      await writeLog(tx, {
+        type: 'MARK_NO_SHOW',
+        target: `标记爽约：${appointment.patient.name} -> ${appointment.scheduleId}`,
+        role: 'FRONTDESK',
+      });
+
+      return noShow;
+    });
+  }
+
   @Patch(':id/reschedule')
   async reschedule(@Param('id') id: string, @Body() body: { targetScheduleId: string }) {
     return this.prisma.$transaction(async (tx) => {

@@ -95,6 +95,7 @@ enum AppointmentStatus {
   IN_PROGRESS
   COMPLETED
   PENDING_FRONTDESK
+  NO_SHOW
 }
 
 model Appointment {
@@ -151,10 +152,12 @@ model QueueSkipLog {
 }
 
 model ClinicConfig {
-  id                  String   @id @default("singleton")
-  cancelDeadlineHours Int      @default(2) @map("cancel_deadline_hours")
-  advanceBookingDays  Int      @default(7) @map("advance_booking_days")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  id                     String   @id @default("singleton")
+  cancelDeadlineHours    Int      @default(2) @map("cancel_deadline_hours")
+  advanceBookingDays     Int      @default(7) @map("advance_booking_days")
+  lateThresholdMinutes   Int      @default(15) @map("late_threshold_minutes")
+  noShowThresholdMinutes Int      @default(30) @map("no_show_threshold_minutes")
+  updatedAt              DateTime @updatedAt @map("updated_at")
 
   @@map("clinic_configs")
 }
@@ -208,6 +211,7 @@ enum OperationType {
   WAITLIST_CLOSE
   SUBSTITUTE_SCHEDULE
   CREATE_VISIT_RECORD
+  MARK_NO_SHOW
 }
 
 model OperationLog {
