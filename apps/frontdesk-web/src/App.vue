@@ -33,24 +33,17 @@
             <el-table-column label="时段" width="100">
               <template #default="{ row }">{{ row.schedule?.startTime }}-{{ row.schedule?.endTime }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="85">
+            <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
-                <el-tag v-else-if="row.status === 'CHECKED_IN'" type="warning" size="small">已签到</el-tag>
-                <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
-                <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
-                <el-tag v-else-if="row.status === 'COMPLETED'" type="success" size="small">已完成</el-tag>
-                <el-tag v-else-if="row.status === 'CANCELLED'" type="info" size="small">已取消</el-tag>
-                <el-tag v-else type="info" size="small">{{ row.status }}</el-tag>
+                <el-tag :type="getStatusTagType(row)" size="small">{{ getAppointmentStatus(row) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="75">
+            <el-table-column label="操作" width="180">
               <template #default="{ row }">
-                <el-button
-                  v-if="row.status === 'BOOKED'"
-                  type="success" size="small"
-                  @click="checkin(row.id)"
-                >签到</el-button>
+                <template v-if="row.status === 'BOOKED'">
+                  <el-button type="success" size="small" @click="checkin(row.id)">签到</el-button>
+                  <el-button v-if="getAppointmentStatus(row) === '已爽约' && row.status === 'BOOKED'" type="danger" size="small" @click="markNoShow(row)">标记爽约</el-button>
+                </template>
                 <span v-else style="color:#9ca3af">-</span>
               </template>
             </el-table-column>
@@ -229,6 +222,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 
 const API = '/api';
 const queryDate = ref(new Date().toLocaleDateString('sv-SE'));
+const clinicConfig = ref({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
 const appointments = ref<any[]>([]);
 const waitingQueue = ref<any[]>([]);
 const pendingFrontdesk = ref<any[]>([]);
@@ -257,7 +251,75 @@ async function fetchQueue() {
 }
 
 async function refresh() {
-  await Promise.all([fetchAppointments(), fetchQueue(), fetchPendingFrontdesk(), fetchChangeRequests(), fetchWaitlistQueue()]);
+  await Promise.all([fetchAppointments(), fetchQueue(), fetchPendingFrontdesk(), fetchChangeRequests(), fetchWaitlistQueue(), fetchConfig()]);
+}
+
+function getAppointmentStatus(row: any): string {
+  if (row.status === 'NO_SHOW') return '已爽约';
+  if (row.status === 'CHECKED_IN') return '已签到';
+  if (row.status === 'CALLED') return '已叫号';
+  if (row.status === 'IN_PROGRESS') return '接诊中';
+  if (row.status === 'COMPLETED') return '已完成';
+  if (row.status === 'CANCELLED') return '已取消';
+
+  if (row.status === 'BOOKED' && row.schedule?.date && row.schedule?.startTime) {
+    const dateStr = row.schedule.date.slice(0, 10);
+    const startTime = new Date(`${dateStr}T${row.schedule.startTime}:00`);
+    const elapsedMin = (Date.now() - startTime.getTime()) / 60000;
+
+    if (elapsedMin >= clinicConfig.value.noShowThresholdMinutes) return '已爽约';
+    if (elapsedMin >= clinicConfig.value.lateThresholdMinutes) return '已迟到';
+    return '待到诊';
+  }
+
+  return row.status;
+}
+
+function getStatusTagType(row: any): string {
+  const status = getAppointmentStatus(row);
+  if (status === '已签到') return 'warning';
+  if (status === '已叫号') return 'primary';
+  if (status === '接诊中') return 'warning';
+  if (status === '已完成') return 'success';
+  if (status === '已取消') return 'info';
+  if (status === '已迟到') return 'warning';
+  if (status === '已爽约') return 'danger';
+  return '';
+}
+
+async function markNoShow(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确认将患者 ${row.patient?.name} 标记为爽约？\n号源将被释放，候补患者将被补位。`,
+      '标记爽约',
+      { confirmButtonText: '确认标记', cancelButtonText: '取消', type: 'warning' }
+    );
+    const res = await fetch(`${API}/appointments/${row.id}/mark-no-show`, { method: 'PATCH' });
+    if (!res.ok) {
+      const err = await res.json();
+      ElMessage.error(err.message || '标记爽约失败');
+      return;
+    }
+    ElMessage.success('已标记爽约，号源已释放');
+    await refresh();
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e.message || '网络错误');
+  }
+}
+
+async function fetchConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      clinicConfig.value = {
+        lateThresholdMinutes: data.lateThresholdMinutes ?? 15,
+        noShowThresholdMinutes: data.noShowThresholdMinutes ?? 30,
+      };
+    }
+  } catch (e: any) {
+    console.error('Failed to fetch config:', e);
+  }
 }
 
 async function fetchPendingFrontdesk() {

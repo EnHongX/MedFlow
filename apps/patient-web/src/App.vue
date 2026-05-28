@@ -136,7 +136,9 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
+            <el-tag v-if="row.status === 'NO_SHOW'" type="danger" size="small">已爽约</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED' && isLate(row)" type="warning" size="small">已迟到</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
             <el-tag v-else-if="row.status === 'CANCELLED'" type="info" size="small">已取消</el-tag>
             <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
             <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
@@ -370,6 +372,7 @@ const currentVisitAppointment = ref<any>(null);
 const followUpDialogVisible = ref(false);
 const followUpSchedules = ref<any[]>([]);
 const followUpPatientId = ref('');
+const clinicConfig = ref({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
 
 async function fetchDepartments() {
   try {
@@ -448,7 +451,34 @@ function reset() {
   selectedScheduleId.value = '';
 }
 
-onMounted(fetchDepartments);
+function isLate(row: any): boolean {
+  if (row.status !== 'BOOKED' || !row.schedule?.date || !row.schedule?.startTime) return false;
+  const dateStr = row.schedule.date.slice(0, 10);
+  const startTime = new Date(`${dateStr}T${row.schedule.startTime}:00`).getTime();
+  const elapsed = (Date.now() - startTime) / (1000 * 60);
+  return elapsed >= clinicConfig.value.lateThresholdMinutes
+      && elapsed <  clinicConfig.value.noShowThresholdMinutes;
+}
+
+async function fetchConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      clinicConfig.value = {
+        lateThresholdMinutes: data.lateThresholdMinutes ?? 15,
+        noShowThresholdMinutes: data.noShowThresholdMinutes ?? 30,
+      };
+    }
+  } catch {
+    // fail silently
+  }
+}
+
+onMounted(() => {
+  fetchConfig();
+  fetchDepartments();
+});
 
 async function fetchMyAppointments() {
   if (!myPhone.value.trim()) { ElMessage.warning('请输入手机号'); return; }

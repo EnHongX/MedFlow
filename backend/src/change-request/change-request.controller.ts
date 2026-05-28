@@ -41,6 +41,9 @@ export class ChangeRequestController {
     if (cr.status !== 'PENDING') throw new BadRequestException('该请求已处理');
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // Acquire row lock to serialize against concurrent markNoShow/cancel operations
+      await tx.$executeRaw`SELECT id FROM appointments WHERE id = ${cr.appointmentId} FOR UPDATE`;
+
       const appointment = await tx.appointment.findUniqueOrThrow({
         where: { id: cr.appointmentId },
         include: { schedule: true },
@@ -51,7 +54,7 @@ export class ChangeRequestController {
           where: { id },
           data: { status: 'REJECTED', reason: '预约状态已变更，无法继续操作', resolvedAt: new Date() },
         });
-        await writeLog(tx, { type: 'APPROVE_CHANGE_REQUEST', target: `自动驳回：${cr.type === 'CANCEL' ? '取消' : '改期'}预约${cr.appointmentId}`, role: 'FRONTDESK', result: 'fail', remark: '预约状态已变更（已签到/叫号/接诊中）' });
+        await writeLog(tx, { type: 'APPROVE_CHANGE_REQUEST', target: `自动驳回：${cr.type === 'CANCEL' ? '取消' : '改期'}预约${cr.appointmentId}`, role: 'FRONTDESK', result: 'fail', remark: `预约状态已变更（${appointment.status}）` });
         return { autoRejected: true, data: rejected };
       }
 
