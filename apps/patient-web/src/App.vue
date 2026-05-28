@@ -136,7 +136,9 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
+            <el-tag v-if="row.status === 'NO_SHOW'" type="danger" size="small">已爽约</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED' && isLate(row)" type="warning" size="small">已迟到</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
             <el-tag v-else-if="row.status === 'CANCELLED'" type="info" size="small">已取消</el-tag>
             <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
             <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
@@ -148,9 +150,11 @@
             <el-tag v-else size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="原因" min-width="120" show-overflow-tooltip>
+        <el-table-column label="提示" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.transferReason" style="color:#e6a23c">{{ row.transferReason }}</span>
+            <span v-if="row.status === 'NO_SHOW'" style="color:#f56c6c">您未按时到诊，已被标记爽约，号源已释放</span>
+            <span v-else-if="row.status === 'BOOKED' && isLate(row)" style="color:#e6a23c">您已迟到，请尽快前往签到，否则可能被标记爽约</span>
+            <span v-else-if="row.transferReason" style="color:#e6a23c">{{ row.transferReason }}</span>
             <span v-else-if="row.cancelReason">{{ row.cancelReason }}</span>
             <span v-else style="color:#9ca3af">-</span>
           </template>
@@ -178,6 +182,7 @@
               <el-button size="small" @click="viewVisitRecord(row)">就诊记录</el-button>
               <el-button v-if="row.visitRecord?.followUpRecommended" type="primary" size="small" @click="openFollowUp(row)">复诊预约</el-button>
             </template>
+            <span v-else-if="row.status === 'NO_SHOW'" style="color:#f56c6c;font-size:12px">已爽约</span>
             <span v-else style="color:#9ca3af">-</span>
           </template>
         </el-table-column>
@@ -370,6 +375,30 @@ const currentVisitAppointment = ref<any>(null);
 const followUpDialogVisible = ref(false);
 const followUpSchedules = ref<any[]>([]);
 const followUpPatientId = ref('');
+const patientClinicConfig = ref<{ lateThresholdMinutes: number; noShowThresholdMinutes: number }>({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
+
+function isLate(row: any): boolean {
+  if (row.status !== 'BOOKED') return false;
+  const scheduleDate = row.schedule?.date?.slice(0, 10);
+  const startTime = row.schedule?.startTime;
+  if (!scheduleDate || !startTime) return false;
+  const start = new Date(scheduleDate + 'T' + startTime + ':00');
+  const elapsed = (Date.now() - start.getTime()) / 60000;
+  return elapsed >= patientClinicConfig.value.lateThresholdMinutes;
+}
+
+async function fetchPatientConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      patientClinicConfig.value = {
+        lateThresholdMinutes: data.lateThresholdMinutes ?? 15,
+        noShowThresholdMinutes: data.noShowThresholdMinutes ?? 30,
+      };
+    }
+  } catch { /* use defaults */ }
+}
 
 async function fetchDepartments() {
   try {
@@ -448,7 +477,7 @@ function reset() {
   selectedScheduleId.value = '';
 }
 
-onMounted(fetchDepartments);
+onMounted(() => { fetchDepartments(); fetchPatientConfig(); });
 
 async function fetchMyAppointments() {
   if (!myPhone.value.trim()) { ElMessage.warning('请输入手机号'); return; }
