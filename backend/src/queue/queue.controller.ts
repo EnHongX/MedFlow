@@ -49,6 +49,7 @@ export class QueueController {
   @Post('checkin')
   async checkin(@Body() body: { appointmentId: string }) {
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${body.appointmentId} FOR UPDATE`;
       const appointment = await tx.appointment.findUniqueOrThrow({
         where: { id: body.appointmentId },
         include: { queueEntry: true, schedule: true },
@@ -59,6 +60,9 @@ export class QueueController {
       }
       if (appointment.queueEntry) {
         throw new BadRequestException('该预约已签到，不能重复签到');
+      }
+      if (appointment.status === 'NO_SHOW') {
+        throw new BadRequestException('当前预约已被标记爽约，无法签到');
       }
       if (appointment.status !== 'BOOKED') {
         throw new BadRequestException('只有已预约状态才能签到');
