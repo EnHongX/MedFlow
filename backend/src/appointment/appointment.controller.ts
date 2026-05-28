@@ -300,4 +300,47 @@ export class AppointmentController {
       return completed;
     });
   }
+
+  @Patch(':id/mark-no-show')
+  async markNoShow(@Param('id') id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findUniqueOrThrow({
+        where: { id },
+        include: { schedule: true, patient: { select: { name: true } } },
+      });
+
+      if (appointment.status !== 'BOOKED') {
+        throw new BadRequestException('只有待就诊状态才能标记爽约');
+      }
+
+      const config = await tx.clinicConfig.findFirst();
+      const noShowThreshold = config?.noShowThresholdMinutes ?? 30;
+      const appointmentTime = new Date(
+        appointment.schedule.date.toISOString().slice(0, 10) + 'T' + appointment.schedule.startTime + ':00',
+      );
+      if (Date.now() - appointmentTime.getTime() < noShowThreshold * 60 * 1000) {
+        throw new BadRequestException(`未到爽约时间，需超过预约时间${noShowThreshold}分钟后才能标记`);
+      }
+
+      const updated = await tx.appointment.update({
+        where: { id },
+        data: { status: 'NO_SHOW' },
+      });
+
+      await tx.schedule.update({
+        where: { id: appointment.scheduleId },
+        data: { remaining: { increment: 1 } },
+      });
+
+      await promoteWaitlist(tx as any, appointment.scheduleId);
+
+      await writeLog(tx, {
+        type: 'MARK_NO_SHOW',
+        target: `标记爽约：${appointment.patient.name} (${id.slice(0, 8)})`,
+        role: 'FRONTDESK',
+      });
+
+      return updated;
+    });
+  }
 }

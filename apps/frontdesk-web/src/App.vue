@@ -35,7 +35,10 @@
             </el-table-column>
             <el-table-column label="状态" width="85">
               <template #default="{ row }">
-                <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
+                <el-tag v-if="row.status === 'NO_SHOW'" type="danger" size="small">已爽约</el-tag>
+                <el-tag v-else-if="row.status === 'BOOKED' && canMarkNoShow(row)" type="warning" size="small">已迟到</el-tag>
+                <el-tag v-else-if="row.status === 'BOOKED' && isLate(row)" type="warning" size="small">已迟到</el-tag>
+                <el-tag v-else-if="row.status === 'BOOKED'" size="small">待到诊</el-tag>
                 <el-tag v-else-if="row.status === 'CHECKED_IN'" type="warning" size="small">已签到</el-tag>
                 <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
                 <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
@@ -44,10 +47,14 @@
                 <el-tag v-else type="info" size="small">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="75">
+            <el-table-column label="操作" width="130">
               <template #default="{ row }">
+                <template v-if="row.status === 'BOOKED' && canMarkNoShow(row)">
+                  <el-button type="success" size="small" @click="checkin(row.id)">签到</el-button>
+                  <el-button type="danger" size="small" @click="markNoShow(row.id)">爽约</el-button>
+                </template>
                 <el-button
-                  v-if="row.status === 'BOOKED'"
+                  v-else-if="row.status === 'BOOKED'"
                   type="success" size="small"
                   @click="checkin(row.id)"
                 >签到</el-button>
@@ -234,6 +241,7 @@ const waitingQueue = ref<any[]>([]);
 const pendingFrontdesk = ref<any[]>([]);
 const changeRequests = ref<any[]>([]);
 const waitlistQueue = ref<any[]>([]);
+const clinicConfig = ref({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
 
 async function fetchAppointments() {
   try {
@@ -242,6 +250,50 @@ async function fetchAppointments() {
     appointments.value = await res.json();
   } catch (e: any) {
     ElMessage.error(e.message || '网络错误：无法连接后端服务');
+  }
+}
+
+async function fetchConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      clinicConfig.value = { lateThresholdMinutes: data.lateThresholdMinutes, noShowThresholdMinutes: data.noShowThresholdMinutes };
+    }
+  } catch { /* ignore */ }
+}
+
+function getAppointmentTime(row: any): number {
+  if (!row.schedule) return Infinity;
+  const dateStr = row.schedule.date?.slice?.(0, 10) || row.schedule.date?.toISOString?.().slice(0, 10);
+  return new Date(`${dateStr}T${row.schedule.startTime}:00`).getTime();
+}
+
+function isLate(row: any): boolean {
+  if (row.status !== 'BOOKED') return false;
+  const apptTime = getAppointmentTime(row);
+  return Date.now() - apptTime > clinicConfig.value.lateThresholdMinutes * 60 * 1000;
+}
+
+function canMarkNoShow(row: any): boolean {
+  if (row.status !== 'BOOKED') return false;
+  const apptTime = getAppointmentTime(row);
+  return Date.now() - apptTime > clinicConfig.value.noShowThresholdMinutes * 60 * 1000;
+}
+
+async function markNoShow(id: string) {
+  try {
+    await ElMessageBox.confirm('确定将该预约标记为爽约？爽约后号源将释放给候补患者。', '标记爽约', { type: 'warning' });
+    const res = await fetch(`${API}/appointments/${id}/mark-no-show`, { method: 'PATCH' });
+    if (!res.ok) {
+      const err = await res.json();
+      ElMessage.error(err.message || '标记爽约失败');
+      return;
+    }
+    ElMessage.success('已标记爽约');
+    await refresh();
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e.message || '网络错误');
   }
 }
 
@@ -257,7 +309,7 @@ async function fetchQueue() {
 }
 
 async function refresh() {
-  await Promise.all([fetchAppointments(), fetchQueue(), fetchPendingFrontdesk(), fetchChangeRequests(), fetchWaitlistQueue()]);
+  await Promise.all([fetchConfig(), fetchAppointments(), fetchQueue(), fetchPendingFrontdesk(), fetchChangeRequests(), fetchWaitlistQueue()]);
 }
 
 async function fetchPendingFrontdesk() {
