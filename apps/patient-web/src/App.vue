@@ -136,7 +136,9 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
+            <el-tag v-if="row.status === 'NO_SHOW'" type="danger" size="small">已爽约</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED' && isLate(row)" type="warning" size="small">已迟到</el-tag>
+            <el-tag v-else-if="row.status === 'BOOKED'" size="small">已预约</el-tag>
             <el-tag v-else-if="row.status === 'CANCELLED'" type="info" size="small">已取消</el-tag>
             <el-tag v-else-if="row.status === 'CALLED'" type="primary" size="small">已叫号</el-tag>
             <el-tag v-else-if="row.status === 'IN_PROGRESS'" type="warning" size="small">接诊中</el-tag>
@@ -170,7 +172,10 @@
         </el-table-column>
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <template v-if="row.status === 'BOOKED'">
+            <template v-if="row.status === 'NO_SHOW'">
+              <span style="color:#9ca3af">-</span>
+            </template>
+            <template v-else-if="row.status === 'BOOKED'">
               <el-button type="danger" size="small" @click="cancelAppointment(row)">取消</el-button>
               <el-button type="warning" size="small" @click="openReschedule(row)">改期</el-button>
             </template>
@@ -345,6 +350,7 @@ import { ElMessage } from 'element-plus';
 const API = '/api';
 const step = ref(0);
 const patientPhone = ref('');
+const clinicConfig = ref({ lateThresholdMinutes: 15, noShowThresholdMinutes: 30 });
 
 const departments = ref<any[]>([]);
 const doctors = ref<any[]>([]);
@@ -450,8 +456,26 @@ function reset() {
 
 onMounted(fetchDepartments);
 
+async function fetchConfig() {
+  try {
+    const res = await fetch(`${API}/config`);
+    if (res.ok) {
+      const data = await res.json();
+      clinicConfig.value = { lateThresholdMinutes: data.lateThresholdMinutes, noShowThresholdMinutes: data.noShowThresholdMinutes };
+    }
+  } catch { /* ignore */ }
+}
+
+function isLate(row: any): boolean {
+  if (row.status !== 'BOOKED' || !row.schedule) return false;
+  const dateStr = row.schedule.date?.slice?.(0, 10) || row.schedule.date?.toISOString?.().slice(0, 10);
+  const apptTime = new Date(`${dateStr}T${row.schedule.startTime}:00`).getTime();
+  return Date.now() - apptTime > clinicConfig.value.lateThresholdMinutes * 60 * 1000;
+}
+
 async function fetchMyAppointments() {
   if (!myPhone.value.trim()) { ElMessage.warning('请输入手机号'); return; }
+  await fetchConfig();
   try {
     const patients = await fetch(`${API}/patients?phone=${myPhone.value.trim()}`).then(r => r.json()).catch(() => []);
     myAppointmentsSearched.value = true;

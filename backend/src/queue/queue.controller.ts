@@ -57,6 +57,9 @@ export class QueueController {
       if (appointment.schedule.suspended) {
         throw new BadRequestException('该排班已停诊，无法签到');
       }
+      if (appointment.status === 'NO_SHOW') {
+        throw new BadRequestException('该预约已爽约，无法签到');
+      }
       if (appointment.queueEntry) {
         throw new BadRequestException('该预约已签到，不能重复签到');
       }
